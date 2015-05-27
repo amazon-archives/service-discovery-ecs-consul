@@ -1,0 +1,1045 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS CloudFormation template to create an IAM role, Security Groups, Consul Server and cluster of Consul agents in an ECS Cluster. Please note that this is not designed for production usage.",
+    "Mappings": {
+        "ConsulServerAmiMap": {
+            "eu-west-1": {
+                "AMI": "ami-a10897d6"
+            },
+            "us-east-1": {
+                "AMI": "ami-1ecae776"
+            },
+            "us-west-2": {
+                "AMI": "ami-e7527ed7"
+            }
+        },
+        "EcsNodeAmiMap": {
+            "eu-west-1": {
+                "AMI": "ami-ed7c149a"
+            },
+            "us-east-1": {
+                "AMI": "ami-d0b9acb8"
+            },
+            "us-west-2": {
+                "AMI": "ami-6b88b95b"
+            }
+        },
+        "DcMap": {
+            "eu-west-1": {
+                "Value": "eu1"
+            },
+            "us-east-1": {
+                "Value": "us1"
+            },
+            "us-west-2": {
+                "Value": "us2"
+            }
+        }
+    },
+    "Parameters": {
+        "EcsInstanceType": {
+            "Type": "String",
+            "Description": "ECS instance type",
+            "Default": "t2.micro",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "c3.large",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "c3.8xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge",
+                "i2.xlarge",
+                "i2.2xlarge",
+                "i2.4xlarge",
+                "i2.8xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "ServerInstanceType": {
+            "Type": "String",
+            "Description": "Consul Server EC2 instance type",
+            "Default": "t2.micro",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "c3.large",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "c3.8xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge",
+                "i2.xlarge",
+                "i2.2xlarge",
+                "i2.4xlarge",
+                "i2.8xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "KeyName": {
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the EC2 instances"
+        },
+        "ClusterSize": {
+            "Type": "Number",
+            "Description": "Expected size of the ECS cluster",
+            "Default": "1"
+        },
+        "EcsClusterName": {
+            "Type": "String",
+            "Description": "ECS Cluster Name",
+            "Default": "default"
+        },
+        "SourceCidr": {
+            "Type": "String",
+            "Description": "Optional - CIDR/IP range for ECS instance outside access - defaults to 0.0.0.0/0",
+            "Default": "0.0.0.0/0"
+        },
+        "VPC": {
+            "Type": "AWS::EC2::VPC::Id",
+            "Description": "The VPC Id where the instances will be deployed into."
+        },
+        "SubnetId": {
+            "Type": "AWS::EC2::Subnet::Id",
+            "Description": "The Subnet Id where the instances will be deployed into. Must be a subnet in the the same VPC as the VPC Id input parameter."
+        },
+        "AZ": {
+            "Type": "String",
+            "Description": "The Availability Zone of the Subnet. Must be the same Availabile Zone as the SubnetId parameter."
+        },
+        "AmazonDnsIp": {
+            "Type": "String",
+            "Description": "The IP address of the VPC DNS service running on a reserved IP address at the base of the VPC network range \"plus two\". ",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})",
+            "Default": "10.0.0.2"
+        },
+        "HttpPassword": {
+            "Type": "String",
+            "NoEcho": "true",
+            "Description": "The HTTP password for access to the Consul GUI",
+            "AllowedPattern": "((?=.*\\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[@#$%]).{6,20})",
+            "ConstraintDescription": "Entry that must contains one digit from 0-9, one lowercase characters, one uppercase characters, one special symbols in the list \"@#$%\" and between 6 and 20 characters in length."
+        }
+    },
+    "Resources": {
+        "ConsulAgentSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Consul Agent Security Group",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "ConsulAgentSG"
+                    }
+                ]
+            }
+        },
+        "ConsulServerSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Consul Server Security Group",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "8300",
+                        "ToPort": "8300",
+                        "SourceSecurityGroupId": {
+                            "Ref": "ConsulAgentSecurityGroup"
+                        }
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "ConsulServerSG"
+                    }
+                ]
+            }
+        },
+        "ConsulAgentSecurityGroupIngressTcpEphemeral": {
+            "DependsOn": [
+                "ConsulAgentSecurityGroup"
+            ],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "ConsulAgentSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "32768",
+                "ToPort": "65535",
+                "SourceSecurityGroupId": {
+                    "Ref": "ConsulAgentSecurityGroup"
+                }
+            }
+        },
+        "ConsulAgentSecurityGroupIngressUdpEphemeral": {
+            "DependsOn": [
+                "ConsulAgentSecurityGroup"
+            ],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "ConsulAgentSecurityGroup"
+                },
+                "IpProtocol": "udp",
+                "FromPort": "32768",
+                "ToPort": "65535",
+                "SourceSecurityGroupId": {
+                    "Ref": "ConsulAgentSecurityGroup"
+                }
+            }
+        },
+        "ConsulAgentSecurityGroupIngressDnsUdp": {
+            "DependsOn": [
+                "ConsulAgentSecurityGroup"
+            ],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "ConsulAgentSecurityGroup"
+                },
+                "IpProtocol": "udp",
+                "FromPort": "8600",
+                "ToPort": "8600",
+                "SourceSecurityGroupId": {
+                    "Ref": "ConsulAgentSecurityGroup"
+                }
+            }
+        },
+        "ConsulAgentSecurityGroupIngressDnsTcp": {
+            "DependsOn": [
+                "ConsulAgentSecurityGroup"
+            ],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "ConsulAgentSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "8600",
+                "ToPort": "8600",
+                "SourceSecurityGroupId": {
+                    "Ref": "ConsulAgentSecurityGroup"
+                }
+            }
+        },
+        "ConsulAgentSecurityGroupIngressHttp": {
+            "DependsOn": [
+                "ConsulAgentSecurityGroup"
+            ],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "ConsulAgentSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "8500",
+                "ToPort": "8500",
+                "SourceSecurityGroupId": {
+                    "Ref": "ConsulAgentSecurityGroup"
+                }
+            }
+        },
+        "ConsulAgentSecurityGroupIngressCli": {
+            "DependsOn": [
+                "ConsulAgentSecurityGroup"
+            ],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "ConsulAgentSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "8400",
+                "ToPort": "8400",
+                "SourceSecurityGroupId": {
+                    "Ref": "ConsulAgentSecurityGroup"
+                }
+            }
+        },
+        "ConsulAgentSecurityGroupIngressSerfLanUdp": {
+            "DependsOn": [
+                "ConsulAgentSecurityGroup"
+            ],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "ConsulAgentSecurityGroup"
+                },
+                "IpProtocol": "udp",
+                "FromPort": "8301",
+                "ToPort": "8301",
+                "SourceSecurityGroupId": {
+                    "Ref": "ConsulAgentSecurityGroup"
+                }
+            }
+        },
+        "ConsulAgentSecurityGroupIngressSerfLanTcp": {
+            "DependsOn": [
+                "ConsulAgentSecurityGroup"
+            ],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "ConsulAgentSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "8301",
+                "ToPort": "8301",
+                "SourceSecurityGroupId": {
+                    "Ref": "ConsulAgentSecurityGroup"
+                }
+            }
+        },
+        "ConsulServerSecurityGroupIngressSerfWanTcp": {
+            "DependsOn": [
+                "ConsulServerSecurityGroup"
+            ],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "ConsulServerSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "8302",
+                "ToPort": "8302",
+                "SourceSecurityGroupId": {
+                    "Ref": "ConsulServerSecurityGroup"
+                }
+            }
+        },
+        "ConsulServerSecurityGroupIngressSerfWanUdp": {
+            "DependsOn": [
+                "ConsulServerSecurityGroup"
+            ],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "ConsulServerSecurityGroup"
+                },
+                "IpProtocol": "udp",
+                "FromPort": "8302",
+                "ToPort": "8302",
+                "SourceSecurityGroupId": {
+                    "Ref": "ConsulServerSecurityGroup"
+                }
+            }
+        },
+        "CommonSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "ECS Security Group",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "SourceCidr"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "443",
+                        "ToPort": "443",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            }
+        },
+        "ConsulRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "root",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ecs:CreateCluster",
+                                        "ecs:DeregisterContainerInstance",
+                                        "ecs:DiscoverPollEndpoint",
+                                        "ecs:Poll",
+                                        "ecs:RegisterContainerInstance",
+                                        "ecs:Submit*"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": "ec2:DescribeInstances",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:*"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:logs:*:*:*"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "ConsulInstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "ConsulRole"
+                    }
+                ]
+            }
+        },
+        "ConsulServer": {
+            "Type": "AWS::EC2::Instance",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "InstallAndRun": [
+                            "Install",
+                            "Configure",
+                            "StartContainers"
+                        ]
+                    },
+                    "Install": {
+                        "packages": {
+                            "yum": {
+                                "git": [],
+                                "docker": [],
+                                "nginx": [],
+                                "httpd-devel": []
+                            }
+                        },
+                        "files": {
+                            "/etc/nginx/nginx.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "user  nginx;\n",
+                                            "worker_processes  1;\n",
+                                            "error_log  /var/log/nginx/error.log;\n",
+                                            "pid        /var/run/nginx.pid;\n",
+                                            "events {\n",
+                                            "    worker_connections  1024;\n",
+                                            "}\n\n",
+                                            "http {\n",
+                                            "  server {\n",
+                                            "    listen       80;\n",
+                                            "    location / {\n",
+                                            "      proxy_set_header Host $host;\n",
+                                            "      proxy_set_header X-Real-IP $remote_addr;\n",
+                                            "      proxy_pass http://localhost:8500;\n",
+                                            "      auth_basic \"Restricted\";\n",
+                                            "      auth_basic_user_file /etc/nginx/.htpasswd;\n",
+                                            "    }\n",
+                                            "  }\n",
+                                            "}\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root"
+                            }
+                        },
+                        "services": {
+                            "sysvinit": {
+                                "nginx": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "/etc/nginx/nginx.conf"
+                                    ]
+                                },
+                                "docker": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true"
+                                }
+                            }
+                        }
+                    },
+                    "Configure": {
+                        "commands": {
+                            "01_create_consul_data_dir": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "mkdir -p /opt/consul"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "02_add_user_to_docker_group": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "usermod -a -G docker ec2-user"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "03_pull_consul_image": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "docker pull progrium/consul"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "04_set_nginx_http_password": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "htpasswd -cb /etc/nginx/.htpasswd admin ",
+                                            {
+                                                "Ref": "HttpPassword"
+                                            }
+                                        ]
+                                    ]
+                                }
+                            },
+                            "05_reload_nginx": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/usr/sbin/nginx -s reload"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "StartContainers": {
+                        "commands": {
+                            "01_start_consul_docker_container": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "docker run -d --restart=always -p 8300:8300 -p 8301:8301 -p 8301:8301/udp",
+                                            " -p 8302:8302 -p 8302:8302/udp -p 8400:8400 -p 8500:8500 -p 53:53/udp",
+                                            " -v /opt/consul:/data",
+                                            " -h $(curl -s http://169.254.169.254/latest/meta-data/instance-id)",
+                                            " --name consul-server progrium/consul -server -bootstrap",
+                                            " -dc ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "DcMap",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    "Value"
+                                                ]
+                                            },
+                                            " -advertise $(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)",
+                                            " -ui-dir /ui"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "ConsulServerAmiMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMI"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "ServerInstanceType"
+                },
+                "IamInstanceProfile": {
+                    "Ref": "ConsulInstanceProfile"
+                },
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "NetworkInterfaces": [
+                    {
+                        "GroupSet": [
+                            {
+                                "Ref": "ConsulServerSecurityGroup"
+                            },
+                            {
+                                "Ref": "ConsulAgentSecurityGroup"
+                            },
+                            {
+                                "Ref": "CommonSecurityGroup"
+                            }
+                        ],
+                        "AssociatePublicIpAddress": "true",
+                        "DeviceIndex": "0",
+                        "DeleteOnTermination": "true",
+                        "SubnetId": {
+                            "Ref": "SubnetId"
+                        }
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "ConsulServer"
+                    },
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -xe\n",
+                                "yum update -y\n",
+                                "yum update -y aws-cfn-bootstrap\n",
+                                "# Install the files and packages from the metadata\n",
+                                "/opt/aws/bin/cfn-init -v ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource ConsulServer ",
+                                "         --configsets InstallAndRun ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "# Signal the status from cfn-init\n",
+                                "/opt/aws/bin/cfn-signal -e $? ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource ConsulServer ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": "1",
+                    "Timeout": "PT15M"
+                }
+            }
+        },
+        "EcsInstanceLc": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "DependsOn": "ConsulServer",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "InstallAndRun": [
+                            "Install",
+                            "Configure",
+                            "StartContainers"
+                        ]
+                    },
+                    "Install": {
+                        "files": {
+                            "/etc/sysconfig/docker": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "OPTIONS='--dns 172.17.42.1 --dns ",
+                                            {
+                                                "Ref": "AmazonDnsIp"
+                                            },
+                                            " --dns-search service.consul'"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/etc/consul/consul.json": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "{ \"leave_on_terminate\": true, \"recursors\": [ \"",
+                                            {
+                                                "Ref": "AmazonDnsIp"
+                                            },
+                                            "\"] }"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/etc/ecs/ecs.config": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "ECS_CLUSTER=",
+                                            {
+                                                "Ref": "EcsClusterName"
+                                            }
+                                        ]
+                                    ]
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root"
+                            }
+                        }
+                    },
+                    "Configure": {
+                        "commands": {
+                            "01_create_consul_data_dir": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "mkdir -p /opt/consul"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "02_add_user_to_docker_group": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "usermod -a -G docker ec2-user"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "03_restart_docker": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/sbin/service docker restart"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "04_pause_to_wait_for_docker_restart": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/bin/sleep 5"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "05_start_ecs_if_not_running": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[[ $(/sbin/status ecs) =~ \"running\" ]] || /sbin/start ecs"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "06_pull_consul_image": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "docker pull progrium/consul"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "07_pull_registrator_image": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "docker pull gliderlabs/registrator"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "StartContainers": {
+                        "commands": {
+                            "01_start_consul_docker_container": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "docker run -d --restart=always -p 8301:8301 -p 8301:8301/udp",
+                                            " -p 8400:8400 -p 8500:8500 -p 53:53/udp",
+                                            " -v /opt/consul:/data -v /var/run/docker.sock:/var/run/docker.sock",
+                                            " -v /etc/consul:/etc/consul",
+                                            " -h $(curl -s http://169.254.169.254/latest/meta-data/instance-id)",
+                                            " --name consul-agent progrium/consul -join ",
+                                            {
+                                                "Fn::GetAtt": [
+                                                    "ConsulServer",
+                                                    "PrivateIp"
+                                                ]
+                                            },
+                                            " -advertise $(curl -s http://169.254.169.254/latest/meta-data/local-ipv4) -dc ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "DcMap",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    "Value"
+                                                ]
+                                            },
+                                            " -config-file /etc/consul/consul.json"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "02_start_registrator_docker_container": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "docker run -d --restart=always -v /var/run/docker.sock:/tmp/docker.sock",
+                                            " -h $(curl -s http://169.254.169.254/latest/meta-data/instance-id)",
+                                            " --name consul-registrator gliderlabs/registrator",
+                                            " consul://$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4):8500"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "EcsNodeAmiMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMI"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "EcsInstanceType"
+                },
+                "AssociatePublicIpAddress": true,
+                "IamInstanceProfile": {
+                    "Ref": "ConsulInstanceProfile"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "ConsulAgentSecurityGroup"
+                    },
+                    {
+                        "Ref": "CommonSecurityGroup"
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -xe\n",
+                                "yum update -y\n",
+                                "yum install -y aws-cfn-bootstrap\n",
+                                "# Install the files and packages from the metadata\n",
+                                "/opt/aws/bin/cfn-init -v ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource EcsInstanceLc ",
+                                "         --configsets InstallAndRun ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "# Signal the status from cfn-init\n",
+                                "/opt/aws/bin/cfn-signal -e $? ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource EcsInstanceAsg ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "EcsInstanceAsg": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "AvailabilityZones": [
+                    {
+                        "Ref": "AZ"
+                    }
+                ],
+                "VPCZoneIdentifier": [
+                    {
+                        "Ref": "SubnetId"
+                    }
+                ],
+                "LaunchConfigurationName": {
+                    "Ref": "EcsInstanceLc"
+                },
+                "MinSize": {
+                    "Ref": "ClusterSize"
+                },
+                "MaxSize": {
+                    "Ref": "ClusterSize"
+                },
+                "DesiredCapacity": {
+                    "Ref": "ClusterSize"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        },
+                        "PropagateAtLaunch": "true"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "ECS Instance",
+                        "PropagateAtLaunch": "true"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "ConsulServerURL": {
+            "Description": "Name of the ConsulServer instance",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        "http://",
+                        {
+                            "Fn::GetAtt": [
+                                "ConsulServer",
+                                "PublicDnsName"
+                            ]
+                        },
+                        "/ui"
+                    ]
+                ]
+            }
+        },
+        "EcsInstanceAsgName": {
+            "Description": "Auto Scaling Group Name for ECS Instances",
+            "Value": {
+                "Ref": "EcsInstanceAsg"
+            }
+        }
+    }
+}
