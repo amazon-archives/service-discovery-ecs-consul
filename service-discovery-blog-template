@@ -897,7 +897,8 @@
                                         [
                                             "docker run -d --restart=always -v /var/run/docker.sock:/tmp/docker.sock",
                                             " -h $(curl -s http://169.254.169.254/latest/meta-data/instance-id)",
-                                            " --name consul-registrator gliderlabs/registrator",
+                                            " --name consul-registrator gliderlabs/registrator:latest",
+                                            " -ip $(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)",
                                             " consul://$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4):8500"
                                         ]
                                     ]
