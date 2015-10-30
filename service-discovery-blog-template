@@ -485,27 +485,28 @@
                             "/etc/nginx/nginx.conf": {
                                 "content": {
                                     "Fn::Join": [
-                                        "",
+                                        "\n",
                                         [
-                                            "user  nginx;\n",
-                                            "worker_processes  1;\n",
-                                            "error_log  /var/log/nginx/error.log;\n",
-                                            "pid        /var/run/nginx.pid;\n",
-                                            "events {\n",
-                                            "    worker_connections  1024;\n",
-                                            "}\n\n",
-                                            "http {\n",
-                                            "  server {\n",
-                                            "    listen       80;\n",
-                                            "    location / {\n",
-                                            "      proxy_set_header Host $host;\n",
-                                            "      proxy_set_header X-Real-IP $remote_addr;\n",
-                                            "      proxy_pass http://localhost:8500;\n",
-                                            "      auth_basic \"Restricted\";\n",
-                                            "      auth_basic_user_file /etc/nginx/.htpasswd;\n",
-                                            "    }\n",
-                                            "  }\n",
-                                            "}\n"
+                                            "user  nginx;",
+                                            "worker_processes  1;",
+                                            "error_log  /var/log/nginx/error.log;",
+                                            "pid        /var/run/nginx.pid;",
+                                            "events {",
+                                            "    worker_connections  1024;",
+                                            "}",
+                                            "",
+                                            "http {",
+                                            "  server {",
+                                            "    listen       80;",
+                                            "    location / {",
+                                            "      proxy_set_header Host $host;",
+                                            "      proxy_set_header X-Real-IP $remote_addr;",
+                                            "      proxy_pass http://localhost:8500;",
+                                            "      auth_basic \"Restricted\";",
+                                            "      auth_basic_user_file /etc/nginx/.htpasswd;",
+                                            "    }",
+                                            "  }",
+                                            "}"
                                         ]
                                     ]
                                 },
@@ -565,9 +566,9 @@
                             "04_set_nginx_http_password": {
                                 "command": {
                                     "Fn::Join": [
-                                        "",
+                                        " ",
                                         [
-                                            "htpasswd -cb /etc/nginx/.htpasswd admin ",
+                                            "htpasswd -cb /etc/nginx/.htpasswd admin",
                                             {
                                                 "Ref": "HttpPassword"
                                             }
@@ -592,14 +593,14 @@
                             "01_start_consul_docker_container": {
                                 "command": {
                                     "Fn::Join": [
-                                        "",
+                                        " ",
                                         [
                                             "docker run -d --restart=always -p 8300:8300 -p 8301:8301 -p 8301:8301/udp",
-                                            " -p 8302:8302 -p 8302:8302/udp -p 8400:8400 -p 8500:8500 -p 53:53/udp",
-                                            " -v /opt/consul:/data",
-                                            " -h $(curl -s http://169.254.169.254/latest/meta-data/instance-id)",
-                                            " --name consul-server progrium/consul -server -bootstrap",
-                                            " -dc ",
+                                            "-p 8302:8302 -p 8302:8302/udp -p 8400:8400 -p 8500:8500 -p 53:53/udp",
+                                            "-v /opt/consul:/data",
+                                            "-h $(curl -s http://169.254.169.254/latest/meta-data/instance-id)",
+                                            "--name consul-server progrium/consul -server -bootstrap",
+                                            "-dc",
                                             {
                                                 "Fn::FindInMap": [
                                                     "DcMap",
@@ -609,8 +610,8 @@
                                                     "Value"
                                                 ]
                                             },
-                                            " -advertise $(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)",
-                                            " -ui-dir /ui"
+                                            "-advertise $(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)",
+                                            "-ui-dir /ui"
                                         ]
                                     ]
                                 }
@@ -733,13 +734,13 @@
                             "/etc/sysconfig/docker": {
                                 "content": {
                                     "Fn::Join": [
-                                        "",
+                                        " ",
                                         [
-                                            "OPTIONS='--dns 172.17.42.1 --dns ",
+                                            "OPTIONS='--dns 172.17.42.1 --dns",
                                             {
                                                 "Ref": "AmazonDnsIp"
                                             },
-                                            " --dns-search service.consul'"
+                                            "--dns-search service.consul'"
                                         ]
                                     ]
                                 },
@@ -861,21 +862,21 @@
                             "01_start_consul_docker_container": {
                                 "command": {
                                     "Fn::Join": [
-                                        "",
+                                        " ",
                                         [
                                             "docker run -d --restart=always -p 8301:8301 -p 8301:8301/udp",
-                                            " -p 8400:8400 -p 8500:8500 -p 53:53/udp",
-                                            " -v /opt/consul:/data -v /var/run/docker.sock:/var/run/docker.sock",
-                                            " -v /etc/consul:/etc/consul",
-                                            " -h $(curl -s http://169.254.169.254/latest/meta-data/instance-id)",
-                                            " --name consul-agent progrium/consul -join ",
+                                            "-p 8400:8400 -p 8500:8500 -p 53:53/udp",
+                                            "-v /opt/consul:/data -v /var/run/docker.sock:/var/run/docker.sock",
+                                            "-v /etc/consul:/etc/consul",
+                                            "-h $(curl -s http://169.254.169.254/latest/meta-data/instance-id)",
+                                            "--name consul-agent progrium/consul -join",
                                             {
                                                 "Fn::GetAtt": [
                                                     "ConsulServer",
                                                     "PrivateIp"
                                                 ]
                                             },
-                                            " -advertise $(curl -s http://169.254.169.254/latest/meta-data/local-ipv4) -dc ",
+                                            "-advertise $(curl -s http://169.254.169.254/latest/meta-data/local-ipv4) -dc",
                                             {
                                                 "Fn::FindInMap": [
                                                     "DcMap",
@@ -885,7 +886,7 @@
                                                     "Value"
                                                 ]
                                             },
-                                            " -config-file /etc/consul/consul.json"
+                                            "-config-file /etc/consul/consul.json"
                                         ]
                                     ]
                                 }
@@ -893,13 +894,13 @@
                             "02_start_registrator_docker_container": {
                                 "command": {
                                     "Fn::Join": [
-                                        "",
+                                        " ",
                                         [
                                             "docker run -d --restart=always -v /var/run/docker.sock:/tmp/docker.sock",
-                                            " -h $(curl -s http://169.254.169.254/latest/meta-data/instance-id)",
-                                            " --name consul-registrator gliderlabs/registrator:latest",
-                                            " -ip $(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)",
-                                            " consul://$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4):8500"
+                                            "-h $(curl -s http://169.254.169.254/latest/meta-data/instance-id)",
+                                            "--name consul-registrator gliderlabs/registrator:latest",
+                                            "-ip $(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)",
+                                            "consul://$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4):8500"
                                         ]
                                     ]
                                 }
