@@ -133,7 +133,7 @@
             "Description": "The Subnet Id where the instances will be deployed into. Must be a subnet in the the same VPC as the VPC Id input parameter."
         },
         "AZ": {
-            "Type": "String",
+            "Type": "AWS::EC2::AvailabilityZone::Name",
             "Description": "The Availability Zone of the Subnet. Must be the same Availabile Zone as the SubnetId parameter."
         },
         "AmazonDnsIp": {
