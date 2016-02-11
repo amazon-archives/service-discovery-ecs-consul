@@ -773,7 +773,8 @@
                                             "ECS_CLUSTER=",
                                             {
                                                 "Ref": "EcsClusterName"
-                                            }
+                                            }, "\n",
+                                            "ECS_RESERVED_MEMORY=50"
                                         ]
                                     ]
                                 },
